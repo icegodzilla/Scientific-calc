@@ -1,34 +1,384 @@
-# Gradle files
-.gradle/
-build/
+import { useState, useCallback } from "react";
 
-# Local configuration file (sdk path, etc)
-local.properties
+const buttons = [
+  ["Rad", "Deg", "x!", "(",  ")"],
+  ["sin", "cos", "tan", "ln", "log"],
+  ["√",  "x²",  "xʸ", "π",  "e"],
+  ["AC",  "+/-", "%",  "÷",  ""],
+  ["7",  "8",   "9",  "×",  ""],
+  ["4",  "5",   "6",  "−",  ""],
+  ["1",  "2",   "3",  "+",  ""],
+  ["0",  "",    ".",  "=",  ""],
+];
 
-# Log/OS Files
-*.log
+const flatButtons = [
+  { label: "Rad",  type: "mode" },
+  { label: "Deg",  type: "mode" },
+  { label: "x!",   type: "fn" },
+  { label: "(",    type: "bracket" },
+  { label: ")",    type: "bracket" },
+  { label: "sin",  type: "fn" },
+  { label: "cos",  type: "fn" },
+  { label: "tan",  type: "fn" },
+  { label: "ln",   type: "fn" },
+  { label: "log",  type: "fn" },
+  { label: "√",    type: "fn" },
+  { label: "x²",   type: "fn" },
+  { label: "xʸ",   type: "fn" },
+  { label: "π",    type: "const" },
+  { label: "e",    type: "const" },
+  { label: "AC",   type: "action" },
+  { label: "+/-",  type: "action" },
+  { label: "%",    type: "action" },
+  { label: "÷",    type: "op" },
+  { label: "7",    type: "num" },
+  { label: "8",    type: "num" },
+  { label: "9",    type: "num" },
+  { label: "×",    type: "op" },
+  { label: "4",    type: "num" },
+  { label: "5",    type: "num" },
+  { label: "6",    type: "num" },
+  { label: "−",    type: "op" },
+  { label: "1",    type: "num" },
+  { label: "2",    type: "num" },
+  { label: "3",    type: "num" },
+  { label: "+",    type: "op" },
+  { label: "0",    type: "num", wide: true },
+  { label: ".",    type: "num" },
+  { label: "=",    type: "eq" },
+];
 
-# Android Studio generated files and folders
-captures/
-.externalNativeBuild/
-.cxx/
-*.aab
-*.apk
-output-metadata.json
+function factorial(n) {
+  if (n < 0) return NaN;
+  if (n === 0 || n === 1) return 1;
+  let r = 1;
+  for (let i = 2; i <= n; i++) r *= i;
+  return r;
+}
 
-# IntelliJ
-*.iml
-.idea/
-misc.xml
-deploymentTargetDropDown.xml
-render.experimental.xml
+function evaluate(expr, isDeg) {
+  let e = expr
+    .replace(/×/g, "*")
+    .replace(/÷/g, "/")
+    .replace(/−/g, "-")
+    .replace(/π/g, Math.PI)
+    .replace(/\be\b/g, Math.E);
 
-# Keystore files
-*.jks
-*.keystore
+  const toRad = isDeg ? (x) => (x * Math.PI) / 180 : (x) => x;
 
-# Google Services (e.g. APIs or Firebase)
-google-services.json
+  e = e.replace(/sin\(([^)]+)\)/g, (_, x) => Math.sin(toRad(eval(x))));
+  e = e.replace(/cos\(([^)]+)\)/g, (_, x) => Math.cos(toRad(eval(x))));
+  e = e.replace(/tan\(([^)]+)\)/g, (_, x) => Math.tan(toRad(eval(x))));
+  e = e.replace(/ln\(([^)]+)\)/g,  (_, x) => Math.log(eval(x)));
+  e = e.replace(/log\(([^)]+)\)/g, (_, x) => Math.log10(eval(x)));
+  e = e.replace(/√\(([^)]+)\)/g,   (_, x) => Math.sqrt(eval(x)));
+  e = e.replace(/(\d+(?:\.\d+)?)!/g, (_, x) => factorial(Number(x)));
+  e = e.replace(/\^/g, "**");
 
-# Android Profiling
-*.hprof
+  // eslint-disable-next-line no-new-func
+  return Function('"use strict"; return (' + e + ")")();
+}
+
+export default function ScientificCalculator() {
+  const [display, setDisplay]   = useState("0");
+  const [expr, setExpr]         = useState("");
+  const [isDeg, setIsDeg]       = useState(false);
+  const [justEvaled, setJustEvaled] = useState(false);
+  const [history, setHistory]   = useState("");
+
+  const press = useCallback((label, type) => {
+    if (type === "mode") {
+      setIsDeg(label === "Deg");
+      return;
+    }
+
+    if (label === "AC") {
+      setDisplay("0"); setExpr(""); setHistory(""); setJustEvaled(false);
+      return;
+    }
+
+    if (label === "=") {
+      try {
+        let full = expr + display;
+        // auto-close open parens
+        const opens = (full.match(/\(/g) || []).length;
+        const closes = (full.match(/\)/g) || []).length;
+        full += ")".repeat(Math.max(0, opens - closes));
+        const result = evaluate(full, isDeg);
+        const nice = parseFloat(result.toFixed(10)).toString();
+        setHistory(full + " =");
+        setDisplay(nice);
+        setExpr("");
+        setJustEvaled(true);
+      } catch {
+        setDisplay("Error");
+        setExpr("");
+        setJustEvaled(true);
+      }
+      return;
+    }
+
+    if (label === "+/-") {
+      setDisplay((d) => d.startsWith("-") ? d.slice(1) : "-" + d);
+      return;
+    }
+
+    if (label === "%") {
+      try {
+        setDisplay((d) => String(parseFloat(d) / 100));
+      } catch { setDisplay("Error"); }
+      return;
+    }
+
+    const isOp = type === "op";
+    const isFn = type === "fn";
+    const isConst = type === "const";
+
+    if (isOp) {
+      setExpr(expr + display + label);
+      setDisplay("0");
+      setJustEvaled(false);
+      return;
+    }
+
+    if (label === "xʸ") {
+      setExpr(expr + display + "^");
+      setDisplay("0");
+      setJustEvaled(false);
+      return;
+    }
+
+    if (label === "x²") {
+      setExpr(expr + display + "^2");
+      setDisplay("0");
+      setJustEvaled(false);
+      return;
+    }
+
+    if (label === "x!") {
+      const result = factorial(Number(display));
+      setHistory(display + "! =");
+      setDisplay(String(result));
+      setExpr("");
+      setJustEvaled(true);
+      return;
+    }
+
+    if (isFn) {
+      setExpr(expr + display === "0" ? label + "(" : expr + label + "(");
+      setDisplay("0");
+      setJustEvaled(false);
+      return;
+    }
+
+    if (label === "(") {
+      setExpr(expr + display + "(");
+      setDisplay("0");
+      setJustEvaled(false);
+      return;
+    }
+
+    if (label === ")") {
+      setExpr(expr + display + ")");
+      setDisplay("0");
+      setJustEvaled(false);
+      return;
+    }
+
+    if (isConst) {
+      setDisplay(label === "π" ? String(Math.PI) : String(Math.E));
+      setJustEvaled(false);
+      return;
+    }
+
+    // digits and dot
+    if (type === "num") {
+      if (justEvaled) { setDisplay(label === "." ? "0." : label); setJustEvaled(false); return; }
+      if (label === ".") {
+        setDisplay((d) => d.includes(".") ? d : d + ".");
+        return;
+      }
+      setDisplay((d) => d === "0" ? label : d + label);
+    }
+  }, [display, expr, isDeg, justEvaled]);
+
+  const displayText = display.length > 12 ? parseFloat(display).toExponential(6) : display;
+
+  return (
+    <div style={{
+      minHeight: "100vh",
+      background: "#0a0a0f",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontFamily: "'Courier New', monospace",
+      padding: "20px",
+    }}>
+      <div style={{
+        width: "360px",
+        background: "linear-gradient(145deg, #13131f, #0d0d18)",
+        borderRadius: "24px",
+        padding: "24px",
+        boxShadow: "0 0 0 1px rgba(100,100,255,0.1), 0 40px 80px rgba(0,0,0,0.8), inset 0 1px 0 rgba(255,255,255,0.05)",
+        border: "1px solid rgba(80,80,200,0.15)",
+      }}>
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+          <span style={{ color: "#4444aa", fontSize: "11px", letterSpacing: "3px", textTransform: "uppercase" }}>Scientific</span>
+          <div style={{ display: "flex", gap: "6px" }}>
+            {["Rad", "Deg"].map(m => (
+              <button key={m} onClick={() => setIsDeg(m === "Deg")} style={{
+                background: isDeg === (m === "Deg") ? "rgba(80,80,220,0.3)" : "transparent",
+                border: `1px solid ${isDeg === (m === "Deg") ? "rgba(100,100,255,0.5)" : "rgba(255,255,255,0.1)"}`,
+                color: isDeg === (m === "Deg") ? "#8888ff" : "#555",
+                borderRadius: "6px",
+                padding: "3px 10px",
+                fontSize: "11px",
+                cursor: "pointer",
+                letterSpacing: "1px",
+                transition: "all 0.2s",
+              }}>{m}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Display */}
+        <div style={{
+          background: "#08080f",
+          borderRadius: "16px",
+          padding: "16px 20px",
+          marginBottom: "20px",
+          border: "1px solid rgba(80,80,200,0.1)",
+          minHeight: "90px",
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "flex-end",
+          alignItems: "flex-end",
+          overflow: "hidden",
+        }}>
+          <div style={{ color: "#333355", fontSize: "12px", marginBottom: "6px", minHeight: "16px", wordBreak: "break-all", textAlign: "right" }}>
+            {history || (expr ? expr : "")}
+          </div>
+          <div style={{
+            color: display === "Error" ? "#ff4466" : "#e0e0ff",
+            fontSize: displayText.length > 10 ? "22px" : "36px",
+            fontWeight: "300",
+            letterSpacing: "-1px",
+            transition: "font-size 0.15s",
+            wordBreak: "break-all",
+            textAlign: "right",
+            textShadow: "0 0 20px rgba(100,100,255,0.3)",
+          }}>{displayText}</div>
+        </div>
+
+        {/* Buttons Grid */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: "8px" }}>
+          {/* Row 1: fn buttons */}
+          {["x!", "(", ")", "ln", "log"].map(label => (
+            <Btn key={label} label={label} type="fn" onPress={press} />
+          ))}
+          {/* Row 2: fn buttons */}
+          {["sin", "cos", "tan", "√", "x²"].map(label => (
+            <Btn key={label} label={label} type="fn" onPress={press} />
+          ))}
+          {/* Row 3: fn + const */}
+          {[
+            { label: "xʸ", type: "fn" },
+            { label: "π", type: "const" },
+            { label: "e", type: "const" },
+            { label: "AC", type: "action" },
+            { label: "+/-", type: "action" },
+          ].map(b => <Btn key={b.label} {...b} onPress={press} />)}
+
+          {/* Row 4 */}
+          {[
+            { label: "%", type: "action" },
+            { label: "7", type: "num" },
+            { label: "8", type: "num" },
+            { label: "9", type: "num" },
+            { label: "÷", type: "op" },
+          ].map(b => <Btn key={b.label} {...b} onPress={press} />)}
+
+          {/* Row 5 */}
+          {[
+            { label: "4", type: "num" },
+            { label: "5", type: "num" },
+            { label: "6", type: "num" },
+            { label: "×", type: "op" },
+            { label: "(", type: "bracket", hide: true },
+          ].map((b, i) => b.hide ? <div key={i} /> : <Btn key={b.label} {...b} onPress={press} />)}
+
+          {/* Row 6 */}
+          {[
+            { label: "1", type: "num" },
+            { label: "2", type: "num" },
+            { label: "3", type: "num" },
+            { label: "−", type: "op" },
+            { label: "", hide: true },
+          ].map((b, i) => b.hide ? <div key={i} /> : <Btn key={b.label} {...b} onPress={press} />)}
+
+          {/* Row 7: 0 wide, dot, =, + */}
+          {/* 0 spans 2 cols */}
+          <div style={{ gridColumn: "span 2" }}>
+            <Btn label="0" type="num" onPress={press} wide />
+          </div>
+          <Btn label="." type="num" onPress={press} />
+          <Btn label="+" type="op" onPress={press} />
+          <Btn label="=" type="eq" onPress={press} />
+        </div>
+
+        <div style={{ textAlign: "center", marginTop: "16px", color: "#222240", fontSize: "10px", letterSpacing: "2px" }}>
+          CALC · v1.0
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Btn({ label, type, onPress, wide }) {
+  const [pressed, setPressed] = useState(false);
+
+  const colors = {
+    fn:      { bg: "rgba(40,40,80,0.6)",  border: "rgba(80,80,160,0.2)",  text: "#8888cc", hover: "rgba(60,60,120,0.8)" },
+    const:   { bg: "rgba(40,40,80,0.6)",  border: "rgba(80,80,160,0.2)",  text: "#aaaaff", hover: "rgba(60,60,120,0.8)" },
+    action:  { bg: "rgba(60,40,40,0.6)",  border: "rgba(160,80,80,0.2)",  text: "#cc8888", hover: "rgba(100,60,60,0.8)" },
+    op:      { bg: "rgba(40,40,90,0.8)",  border: "rgba(100,100,220,0.3)", text: "#aaaaff", hover: "rgba(70,70,160,0.9)" },
+    num:     { bg: "rgba(20,20,35,0.9)",  border: "rgba(60,60,120,0.2)",  text: "#d0d0f0", hover: "rgba(35,35,60,0.9)" },
+    eq:      { bg: "rgba(60,60,200,0.8)", border: "rgba(120,120,255,0.5)", text: "#ffffff", hover: "rgba(80,80,230,0.9)" },
+    bracket: { bg: "rgba(40,40,80,0.6)",  border: "rgba(80,80,160,0.2)",  text: "#8888cc", hover: "rgba(60,60,120,0.8)" },
+  };
+
+  const c = colors[type] || colors.num;
+
+  return (
+    <button
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      onMouseLeave={() => setPressed(false)}
+      onClick={() => onPress(label, type)}
+      style={{
+        width: "100%",
+        height: "52px",
+        background: pressed ? c.hover : c.bg,
+        border: `1px solid ${c.border}`,
+        borderRadius: "12px",
+        color: c.text,
+        fontSize: type === "fn" ? "13px" : "16px",
+        fontFamily: "'Courier New', monospace",
+        fontWeight: type === "eq" ? "600" : "400",
+        cursor: "pointer",
+        transition: "all 0.1s",
+        transform: pressed ? "scale(0.94)" : "scale(1)",
+        boxShadow: pressed
+          ? "inset 0 2px 4px rgba(0,0,0,0.4)"
+          : type === "eq"
+            ? "0 0 20px rgba(80,80,200,0.3), 0 4px 8px rgba(0,0,0,0.3)"
+            : "0 2px 4px rgba(0,0,0,0.3)",
+        letterSpacing: "0.5px",
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
